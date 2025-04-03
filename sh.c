@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <string.h>
@@ -53,36 +54,77 @@ struct cmd *parsecmd(char *);   // Parse the user's command.
 void runcmd(struct cmd *cmd)
 {
     struct execcmd *ecmd;
-    struct pipecmd *pcmd;
-    struct redircmd *rcmd;
+    //struct pipecmd *pcmd;
+    //struct redircmd *rcmd;
 
     if (cmd == 0)
 	exit(0);
 
+    if (cmd == NULL) {
+        return;
+    }
+
     switch (cmd->type) {
+
         default:
             fprintf(stderr, "runcmd desconocido\n");
             exit(-1);
 
         case EXEC:
+            /* Casteo de menos especifico a más específico
+            Lo convierto en un comando de ejecución para
+            poder obtener propiedades como argv argc etc */
             ecmd = (struct execcmd *) cmd;
             if (ecmd->argv[0] == 0)
                 exit(0);
-            // Eliminar el mensaje de error e implementar
-            // la ejecución de comandos.
-            fprintf(stderr, "EXEC no implementado\n");
+            if (fork() == 0){
+                execvp(ecmd -> argv[0], ecmd -> argv);
+                char* primerArg = ecmd ->argv[0];
+                char mensajeError[256];
+                sprintf(mensajeError, "Error: comando '%s' no encontrado.\n", primerArg);
+                perror(mensajeError);
+                //fprintf(stderr, "Error: comando '%s' no encontrado.\n", ecmd->argv[0]);
+                exit(1);
+            }
+            wait(0);
             break;
 
-        case REDIR:
-            // Eliminar el mensaje de error e implementar
-            // la redirección de entrada y salida estándar.
-            fprintf(stderr, "REDIR no implementado\n");
-            /* USAR el siguiente código para castear cmd a redircmd
-            rcmd = (struct redircmd *) cmd;
-            runcmd(rcmd->cmd);
-            */
-            break;
-
+            case REDIR: {
+                struct redircmd *rcmd = (struct redircmd *) cmd;
+    
+                // Verificar el tipo de redirección ('<' o '>')
+                if (rcmd->mode == O_RDONLY) {
+                    int fd = open(rcmd->file, O_RDONLY);
+                    if (fd < 0) {
+                        perror("Error al abrir archivo para redirección de entrada");
+                        exit(1);
+                    }
+                    //Dup 2 duplica los fd
+                    //Duplica (viejo, nuevo)
+                    if (dup2(fd, STDIN_FILENO) < 0) {
+                        perror("Error al redirigir entrada estándar");
+                        exit(1);
+                    }
+                    close(fd);
+                } else if (rcmd->mode == O_WRONLY || rcmd->mode == (O_WRONLY | O_CREAT | O_TRUNC)) {
+                    int fd = open(rcmd->file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+                    if (fd < 0) {
+                        perror("Error al abrir archivo para redirección de salida");
+                        exit(1);
+                    }
+                    if (dup2(fd, STDOUT_FILENO) < 0) {
+                        perror("Error al redirigir salida estándar");
+                        exit(1);
+                    }
+                    close(fd);
+                }
+    
+                
+                if (rcmd->cmd != NULL) {
+                    runcmd(rcmd->cmd);
+                }
+                break;
+            }
         case PIPE:
             // Eliminar el mensaje de error e implementar
             // la interconexión de procesos mediante tuberías
