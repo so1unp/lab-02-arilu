@@ -54,8 +54,8 @@ struct cmd *parsecmd(char *);   // Parse the user's command.
 void runcmd(struct cmd *cmd)
 {
     struct execcmd *ecmd;
-    //struct pipecmd *pcmd;
-    //struct redircmd *rcmd;
+    struct pipecmd *pcmd;
+    struct redircmd *rcmd;
 
     if (cmd == 0)
 	exit(0);
@@ -90,7 +90,7 @@ void runcmd(struct cmd *cmd)
             break;
 
             case REDIR: {
-                struct redircmd *rcmd = (struct redircmd *) cmd;
+                rcmd = (struct redircmd *) cmd;
     
                 // Verificar el tipo de redirección ('<' o '>')
                 if (rcmd->mode == O_RDONLY) {
@@ -128,11 +128,45 @@ void runcmd(struct cmd *cmd)
         case PIPE:
             // Eliminar el mensaje de error e implementar
             // la interconexión de procesos mediante tuberías
-            fprintf(stderr, "PIPE no implementado");
-            /* USAR el siguiente código para castear cmd a redircmd
+            //fprintf(stderr, "PIPE no implementado");
+            // USAR el siguiente código para castear cmd a redircmd
             pcmd = (struct pipecmd *) cmd;
-            runcmd(pcmd->left);
-            */
+            int pid;
+            //runcmd(pcmd->left);
+            int fd[2];
+            if (pipe(fd) < 0) {
+                perror("Error al crear la tubería");
+                exit(1);
+            }
+
+            if((pid =fork()) == 0){
+                if(dup2(fd[1], STDOUT_FILENO) < 0){
+                    perror("Error al redirigir salida estándar");
+                    exit(1);
+                }
+                close(fd[1]);
+                close(fd[0]);
+                runcmd(pcmd->left);
+            }else if(pid == -1){
+                perror("Error al crear el proceso hijo");
+                exit(1);
+            }
+
+            if((pid =fork()) == 0){
+                if(dup2(fd[0], STDIN_FILENO) < 0){
+                    perror("Error al redirigir entrada estándar");
+                    exit(1);
+                }
+                close(fd[1]);
+                close(fd[0]);
+                runcmd(pcmd->right);
+            }else if(pid == -1){
+                perror("Error al crear el proceso hijo");
+                exit(1);
+            }
+            close(fd[1]);
+            wait(NULL);
+            wait(NULL);
             break;
     }
     exit(0);
